@@ -12,7 +12,7 @@ from scipy.optimize import minimize
 # Difficulty of 50 gives a round robin, states 0,1,2,0,1,2, etc
 # Difficulty of 100 means stay in the hard state
 
-def main(level):
+def get_matrix(level):
     if int(level) > 100 or int(level) < 0:
         print("Invalid level 0-100")
         sys.exit(1)
@@ -104,9 +104,10 @@ def main(level):
 
     matrix = np.matrix([row_0, row_1, row_2])
     print(matrix)
+    return matrix
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(f"Usage: {sys.argv[0]} <0-100>")
         sys.exit(1)
-    main(sys.argv[1])
+    get_matrix(sys.argv[1])
