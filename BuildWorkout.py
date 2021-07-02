@@ -28,7 +28,7 @@ tsv_headers = [
 
 equipment_list = [
             "wall", 
-            "dumbbell",
+            "dumbbells",
             "resistance band",
             "resistance loop",
             "kettlebell",
@@ -541,7 +541,7 @@ if args.stretch:
 
 outfile =   str('_'.join(all_muscle_groups) + 
             '_difficulty_'+str(args.difficulty) + 
-            '_'+args.impact_level+"_impact_level"+
+            '_'+args.impact_level+"_impact_level_"+
             '_'.join(args.equipment) +
             '_smooth_surface_'+str(args.smooth_surface)+
             '_stretch_'+str(args.stretch) +  
