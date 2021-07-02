@@ -28,7 +28,7 @@ tsv_headers = [
 
 equipment_list = [
             "wall", 
-            "dumbells",
+            "dumbbell",
             "resistance band",
             "resistance loop",
             "kettlebell",
@@ -252,7 +252,7 @@ for group in args.target_regions:
     else:
         all_muscle_groups.add(group)
 
-all_muscle_groups = sorted(list(all_muscle_groups))
+all_muscle_groups = sorted(list(all_muscle_groups))[::-1]
 if not args.number:
     args.number = len(all_muscle_groups)*3
 
@@ -297,7 +297,7 @@ for row_index, row in df.iterrows():
 
     # Drop excercises that require equipment that is not available
     elif (isinstance(row['Equipment Required'], str) and 
-        not set(row['Equipment Required'].split(',')).issubset(args.equipment)):
+        not set([x.lower() for x in row['Equipment Required'].split(',')]).issubset(args.equipment)):
         drop_msg =  f"Dropping {row['Name']} due to missing equipment:" + \
                     f" {row['Equipment Required']}"
         if args.verbose:
@@ -319,75 +319,112 @@ stretches = df[df['Is Stretch']]
 excercises = df[~df['Is Stretch']]
 targets = []
 
-# Difficulty level determines the difficulty of the first excercise
-# Randomly pick the first exercise from the corresponding difficulty levels
-if args.difficulty < 33:
-    plan = excercises[excercises['Difficulty'] == 'Easy'].sample()
-    #state = 0
-elif args.difficulty < 67:
-    plan = excercises[excercises['Difficulty'] == 'Medium'].sample()
-    #state = 1
-else:
-    #state = 2
-    plan = excercises[excercises['Difficulty'] == 'Hard'].sample()
+def build_plan(args, 
+                excercises,  # Can be excercises OR stretches!
+                muscle_group_dict,
+                stretch=False):
+    if stretch:
+        args.number = len(muscle_group_dict)
+
+    # Difficulty level determines the difficulty of the first excercise
+    # Randomly pick the first exercise from the corresponding difficulty levels
+    if args.difficulty < 33:
+        plan = excercises[excercises['Difficulty'] == 'Easy'].sample(random_state=args.prng_seed)
+        state = 0
+    elif args.difficulty < 67:
+        plan = excercises[excercises['Difficulty'] == 'Medium'].sample(random_state=args.prng_seed)
+        state = 1
+    else:
+        state = 2
+        plan = excercises[excercises['Difficulty'] == 'Hard'].sample(random_state=args.prng_seed)
 
 
-target = ex_muscle_group_dict[plan.iloc[0]['Name']]
-target = target.intersection(all_muscle_groups).pop()
-targets.append(target)
+    target = muscle_group_dict[plan.iloc[0]['Name']]
+    target = target.intersection(all_muscle_groups).pop()
+    targets.append(target)
 
 
-# Finally build the workout plan with N excercises total (excluding stretches)
-print("Building plan")
-print(f"Difficulty levels: {difficulty_levels}")
-while len(plan) < args.number:
-    # Select the next muscle to target 
-    # by cycling through the list of muscles selected by the user
-    target = all_muscle_groups[(all_muscle_groups.index(target)+1)%len(all_muscle_groups)]
-    target = target.strip()
-    # Roll a 100-sided dice to help pick the next 
-    # difficult level based on the transition matrix
-    dice = random.randrange(0,100,1)
-    sum = 0
+    # Finally build the workout plan with N excercises total (excluding stretches)
+    print("Building plan")
+    while len(plan) < args.number:
+        # Select the next muscle to target 
+        # by cycling through the list of muscles selected by the user
+        target = all_muscle_groups[(all_muscle_groups.index(target)+1)%len(all_muscle_groups)]
+        target = target.strip()
+        # difficult level based on the transition matrix
+        # Roll a 100-sided dice to help pick the next level
 
-    #print(f"Old state: {state}")
-    # Get the next difficulty level (0-2) using the dice roll 
-    # and the computed transition matrix
-    state = difficulty_levels.index(plan.tail(1)['Difficulty'].values[0])
-    for i in range(3):
-        sum += tm[state,i]
-        if dice < sum:
-            state = i
-            break
+        dice = random.randrange(0,100,1)
+        sum = 0
 
+        #print(f"Old state: {state}")
+        # Get the next difficulty level (0-2) using the dice roll 
+        # and the computed transition matrix
+        state = difficulty_levels.index(plan.tail(1)['Difficulty'].values[0])
+        for i in range(3):
+            sum += tm[state,i]
+            if dice < sum:
+                state = i
+                break
 
-    #print(f"New state: {state}")
-    # Convert the level (0-2) to a string, e.g. 0->"Easy"
-    new_difficulty = difficulty_levels[state]
-    #print(f"Dice: {dice} State: {state}")
+        #print(f"New state: {state}")
+        # Convert the level (0-2) to a string, e.g. 0->"Easy"
+        new_difficulty = difficulty_levels[state]
+        if args.verbose:
+            print(f"Looking for a(n) {new_difficulty} excercise to target {target} - ")        
 
-    print(f"Looking for a(n) {new_difficulty} excercise to target {target} - ", end='')
+        # What muscle groups were used in the previous excercise?
+        prev_excercise = plan.tail(1)
+        prev_muscle_groups = prev_excercise['Muscle Group(s)']
+        prev_muscle_groups = set(prev_muscle_groups.values[0].split(','))
 
-    # What muscle groups were used in the previous excercise?
-    prev_excercise = plan.tail(1)
-    prev_muscle_groups = prev_excercise['Muscle Group(s)']
-    prev_muscle_groups = set(prev_muscle_groups.values[0].split(','))
+        # Before choosing the next excercise, 
+        # drop excercises that don't target the next muscle in the list
 
-    # Before choosing the next excercise, 
-    # drop excercises that don't target the next muscle in the list
+        # In addition, 
+        # count the number of overlapping muscles used in the previous excercise,
+        # and temporarily drop any excercises with greater that 33% overlap
+        # This prevents working the same muscles back-to-back 
 
-    # In addition, 
-    # count the number of overlapping muscles used in the previous excercise,
-    # and temporarily drop any excercises with greater that 33% overlap
-    # This prevents working the same muscles back-to-back 
+        # Create a temporary (shallow) copy of the excercises dataframe
+        temp_ex = excercises.copy()
+        for key, value in muscle_group_dict.items():
+            # Does this excercise target the next muscle? 
+            # If not, drop it temporarily and continue
+            try:
+                #print(f"{key}:{temp_ex[temp_ex['Name'] == key]['Muscle Group(s)'].values[0]}")
+                if target not in temp_ex[temp_ex['Name'] == key]['Muscle Group(s)'].values[0]:
+                    drop_msg =  f"Temporarily dropping {key:<60} b/c it doesn't" + \
+                                f" target the next primary muscle: {target} " +\
+                                f"| ({temp_ex[temp_ex['Name'] == key]['Muscle Group(s)'].values[0]})"
+                    #if args.verbose:
+                    #    print(drop_msg)
 
-    # Create a temporary (shallow) copy of the excercises dataframe
-    temp_ex = excercises.copy()
-    for key, value in ex_muscle_group_dict.items():
-        # Does this excercise target the next muscle? 
-        # If not, drop it temporarily and continue
+                    temp_ex = temp_ex[temp_ex['Name'] != key]
+                    continue
+            except IndexError as e:
+                print(e)
+
+            if len(all_muscle_groups) > 1:
+                # Get the number of overlapping muscles
+                overlap = len(prev_muscle_groups.intersection(value))
+                # Exclude any excercises that have any overlap 
+                # of greater than 1/3 of the muscle groups used
+                overlap_percent = round(overlap / len(prev_muscle_groups), 2)*100
+                if overlap_percent > 34:
+                    temp_ex = temp_ex[temp_ex['Name'] != key]
+                    drop_msg =  f"Temporarily dropping {key:<30}" + \
+                                f" b/c it uses {overlap}/{len(prev_muscle_groups)}"+ \
+                                f" ({overlap_percent:>5}%)" + \
+                                " of the same muscles as the previous excercise " + \
+                                f"{prev_excercise['Name'].values[0]}"
+                    #if args.verbose:
+                    #    print(drop_msg)
+
+        # temp_ex now holds excercises that 
+        # don't overlap the previous msucles too much
         try:
-            next_ex = temp_ex[temp_ex['Difficulty'] == new_difficulty].sample(random_state=args.prng_seed)
+            next_ex = temp_ex[temp_ex['Difficulty'] == new_difficulty].sample(random_state=args.prng_seed*len(plan))
         except ValueError as e:
             try:
                 next_ex = temp_ex.sample(random_state=args.prng_seed)
@@ -395,73 +432,112 @@ while len(plan) < args.number:
                             f" {target} and avoiding previous muscle groups" + \
                             f" ({prev_muscle_groups}); randomly picked " + \
                             f"{next_ex['Name'].item()} with {next_ex['Difficulty'].item()} difficulty instead"    
-                if args.verbose:
-                    print(err_msg)
+                #if args.verbose:
+                print(err_msg)
             except ValueError as e:
-                if args.verbose:
-                    print(f"Couldn't target {target} AND give proper muscle rest")
-                    print("Skipping it as the primary target")
-                continue
-        except IndexError as e:
-            print(e)
-
-        # Get the number of overlapping muscles
-        overlap = len(prev_muscle_groups.intersection(value))
-        # Exclude any excercises that have any overlap 
-        # of greater than 1/3 of the muscle groups used
-        overlap_percent = round(overlap / len(prev_muscle_groups), 2)*100
-        if overlap_percent > 34:
-            temp_ex = temp_ex[temp_ex['Name'] != key]
-            drop_msg =  f"Temporarily dropping {key:<30}" + \
-                        f" b/c it uses {overlap}/{len(prev_muscle_groups)}"+ \
-                        f" ({overlap_percent:>5}%)" + \
-                        " of the same muscles as the previous excercise " + \
-                        f"{prev_excercise['Name'].values[0]}"
-            #if args.verbose:
-            #    print(drop_msg)
-
-    # temp_ex now holds excercises that target the next msucle
-    try:
-        next_ex = temp_ex[temp_ex['Difficulty'] == new_difficulty].sample()
-    except ValueError as e:
-        try:
-            if state == 0 or state == 2:
-                try:
-                    next_ex = temp_ex[temp_ex['Difficulty'] == 'Medium'].sample()
-                except ValueError:
-                    next_ex = temp_ex.sample()
-
-            elif args.difficulty <= 50:
-                try:
-                    next_ex = temp_ex[temp_ex['Difficulty'] == 'Easy'].sample()
-                except ValueError as e:
-                    next_ex = temp_ex.sample()
-
-            else:
-                try:
-                    next_ex = temp_ex[temp_ex['Difficulty'] == 'Hard'].sample()
-                except ValueError as e:
-                    next_ex = temp_ex.sample()
-
-            err_msg =   f"Failed to find a {new_difficulty} excercise targeting" + \
-                        f" {target} and avoiding previous muscle groups" + \
-                        f" ({prev_muscle_groups}); randomly picked " + \
-                        f"{next_ex['Name'].item()} with {next_ex['Difficulty'].item()} difficulty instead"    
-            #if args.verbose:
-            print(err_msg)
-        except ValueError as e:
-            print(e)
-            if args.verbose:
+                #if args.verbose:
                 print(f"Couldn't target {target} AND give proper muscle rest")
-                print("Skipping it as the primary target")
-                # Roll back the state 
-                # e.g. If we were looking for a hard biceps ex, we still want 
-                # a hard excercise next
-                # print(f"Rolled back state to {state}")
+                #print("Skipping it as the primary target")
+                continue
+
+        plan = pd.concat([plan, next_ex])
+        targets.append(target)
+
+    plan.insert(loc=1, column="Target Muscle", value=targets)
+    print(plan)
+    return plan 
+
+
+def build_stretch_plan(args, 
+                excercises,  # Can be excercises OR stretches!
+                muscle_group_dict,
+                all_muscle_groups):
+
+    # Start with a random relevant stretch
+    plan = excercises.sample(random_state=args.prng_seed)
+
+    target = muscle_group_dict[plan.iloc[0]['Name']]
+    target = target.intersection(all_muscle_groups).pop()
+    targets = [target]
+    
+
+
+    # Finally build the workout plan with N excercises total (excluding stretches)
+    print("Building plan")
+    while len(plan) < len(all_muscle_groups):
+        # Select the next muscle to target 
+        # by cycling through the list of muscles selected by the user
+        target = all_muscle_groups[(all_muscle_groups.index(target)+1)%len(all_muscle_groups)]
+        target = target.strip()
+        print(f"Finding a stretch to target {target}")
+
+        # What muscle groups were used in the previous excercise?
+        prev_excercise = plan.tail(1)
+        prev_muscle_groups = prev_excercise['Muscle Group(s)']
+        prev_muscle_groups = set(prev_muscle_groups.values[0].split(','))
+
+        # Before choosing the next excercise, 
+        # drop excercises that don't target the next muscle in the list
+
+        # In addition, 
+        # count the number of overlapping muscles used in the previous excercise,
+        # and temporarily drop any excercises with greater that 33% overlap
+        # This prevents working the same muscles back-to-back 
+
+        # Create a temporary (shallow) copy of the excercises dataframe
+        temp_ex = excercises.copy()
+        for key, value in muscle_group_dict.items():
+            # Does this excercise target the next muscle? 
+            # If not, drop it temporarily and continue
+            try:
+                #print(f"{key}:{temp_ex[temp_ex['Name'] == key]['Muscle Group(s)'].values[0]}")
+                if target not in temp_ex[temp_ex['Name'] == key]['Muscle Group(s)'].values[0]:
+                    drop_msg =  f"Temporarily dropping {key:<60} b/c it doesn't" + \
+                                f" target the next primary muscle: {target} " +\
+                                f"| ({temp_ex[temp_ex['Name'] == key]['Muscle Group(s)'].values[0]})"
+                    if args.verbose:
+                        print(drop_msg)
+
+                    temp_ex = temp_ex[temp_ex['Name'] != key]
+                    continue
+            except IndexError as e:
+                print(e)
+
+
+
+        # temp_ex now holds excercises that target the muscle in the cycle
+        try:
+            next_ex = None
+            next_ex = temp_ex.sample(random_state=args.prng_seed)
+        except ValueError as e:
+            # Can't find a stretch for this muscle.  Remove it from list.
+            print(f"Can't find any stretches for {target}, removing it from {all_muscle_groups}")
+            del_target = target
+            target = all_muscle_groups[(all_muscle_groups.index(target)-1)%len(all_muscle_groups)]
+            all_muscle_groups.remove(del_target)
             continue
-    print(f"{next_ex['Name'].item()} with {next_ex['Difficulty'].item()} difficulty")
-    plan = pd.concat([plan, next_ex])
-    targets.append(target)
+
+        if any(next_ex):
+            plan = pd.concat([plan, next_ex])
+            targets.append(target)
+
+        else:
+            print("Skipping adding a stretch")
+
+    plan.insert(loc=1, column="Target Muscle", value=targets)
+    print(plan)
+    print(f"Should strech all of {all_muscle_groups}")
+    print(f"# of stretches: {len(plan)} Total muscles to stretch: {len(all_muscle_groups)}" )
+    return plan 
+    
+if args.stretch:
+    stretch_plan = build_stretch_plan(args, stretches, stretch_muscle_group_dict, copy.deepcopy( all_muscle_groups))
+
+plan = build_plan(args, excercises, ex_muscle_group_dict)
+
+if args.stretch:
+    plan = pd.concat([stretch_plan, plan])
+
 
 outfile =   str('_'.join(all_muscle_groups) + 
             '_difficulty_'+str(args.difficulty) + 
