@@ -12,6 +12,23 @@ import copy
 # Declare the global variables
 difficulty_levels = ['Easy', 'Medium', 'Hard']
 
+difficulty_cycles = {
+    0.00: [0],
+    0.13: [0,0,0,1],
+    0.17: [0,0,1],
+    0.25: [0,1],
+    0.33: [0,0,1,2,1],
+    0.38: [0,0,1,2],
+    0.46: [0,1,1,2,1],
+    0.5:  [[0,1,2,1], [0,2]],
+    0.62: [0,1,2,2],
+    0.63: [0,1,2,2,0],
+    0.75: [1,2],
+    0.83: [1,2,2],
+    0.88: [[1,2,2,2], [1,2,2,2,2]],
+    1.0:  [2],
+}
+
 tsv_headers = [
         "Name",
         "Target Muscle",
@@ -28,7 +45,7 @@ tsv_headers = [
 
 equipment_list = [
             "wall", 
-            "dumbbells",
+            "dumbbell",
             "resistance band",
             "resistance loop",
             "kettlebell",
@@ -326,8 +343,42 @@ def build_plan(args,
     if stretch:
         args.number = len(muscle_group_dict)
 
+
+    
+
+
+    # Finally build the workout plan with N excercises total (excluding stretches)
+    print("Finding best difficulty cycle")
+    best_cycle = None
+    best_cycle_dist = 10
+    best_cycle_key = 0
+    for key, value in difficulty_cycles.items():
+        print(f"Examining {key}:{value}")
+
+        if not isinstance(value[0], list):
+            if  key == 0 or \
+                key == 1 or \
+                (len(all_muscle_groups) != len(value) and (len(all_muscle_groups)%len(value))):
+                if abs(args.difficulty/100 - key) < best_cycle_dist:
+                    best_cycle = value
+                    best_cycle_key = key
+                    best_cycle_dist = abs(args.difficulty/100 - key )
+                    print(f"Updating current best as {best_cycle_dist} {key}:{value}")
+
+        else:
+            for cycle in value:
+                if len(all_muscle_groups) != len(cycle) and (len(all_muscle_groups)%len(cycle)):
+                    if abs(args.difficulty/100 - key) < best_cycle_dist:
+                        print(f"Updating current best as {key}:{value}")
+
+                        best_cycle = cycle
+                        best_cycle_key = key
+                        best_cycle_dist = abs(args.difficulty/100 - key )
+                        print(f"Updating current best as {best_cycle_dist} {key}:{value}")
+
     # Difficulty level determines the difficulty of the first excercise
     # Randomly pick the first exercise from the corresponding difficulty levels
+    '''
     if args.difficulty < 33:
         plan = excercises[excercises['Difficulty'] == 'Easy'].sample(random_state=args.prng_seed)
         state = 0
@@ -337,14 +388,13 @@ def build_plan(args,
     else:
         state = 2
         plan = excercises[excercises['Difficulty'] == 'Hard'].sample(random_state=args.prng_seed)
-
-
+    '''
+    plan = excercises[excercises['Difficulty'] == difficulty_levels[best_cycle[0]]].sample(random_state=args.prng_seed)
     target = muscle_group_dict[plan.iloc[0]['Name']]
     target = target.intersection(all_muscle_groups).pop()
     targets.append(target)
 
-
-    # Finally build the workout plan with N excercises total (excluding stretches)
+    print(f"Best cycle plan for difficulty lvl {args.difficulty} targeting {all_muscle_groups} is {best_cycle} with lvl {best_cycle_key:1.3f}")
     print("Building plan")
     while len(plan) < args.number:
         # Select the next muscle to target 
@@ -360,13 +410,15 @@ def build_plan(args,
         #print(f"Old state: {state}")
         # Get the next difficulty level (0-2) using the dice roll 
         # and the computed transition matrix
+        '''
         state = difficulty_levels.index(plan.tail(1)['Difficulty'].values[0])
         for i in range(3):
             sum += tm[state,i]
             if dice < sum:
                 state = i
                 break
-
+        '''
+        state = best_cycle[len(plan)%len(best_cycle)]
         #print(f"New state: {state}")
         # Convert the level (0-2) to a string, e.g. 0->"Easy"
         new_difficulty = difficulty_levels[state]
@@ -397,8 +449,8 @@ def build_plan(args,
                     drop_msg =  f"Temporarily dropping {key:<60} b/c it doesn't" + \
                                 f" target the next primary muscle: {target} " +\
                                 f"| ({temp_ex[temp_ex['Name'] == key]['Muscle Group(s)'].values[0]})"
-                    #if args.verbose:
-                    #    print(drop_msg)
+                    if args.verbose:
+                        print(drop_msg)
 
                     temp_ex = temp_ex[temp_ex['Name'] != key]
                     continue
@@ -427,7 +479,28 @@ def build_plan(args,
             next_ex = temp_ex[temp_ex['Difficulty'] == new_difficulty].sample(random_state=args.prng_seed*len(plan))
         except ValueError as e:
             try:
-                next_ex = temp_ex.sample(random_state=args.prng_seed)
+                if state == 0 or state == 2:
+                    try:
+                        next_ex = temp_ex[temp_ex['Difficulty'] == 'Medium'].sample()
+                    except ValueError:
+                        print("no mediums found")
+                        next_ex = temp_ex.sample()
+
+                elif args.difficulty <= 50:
+                    try:
+                        next_ex = temp_ex[temp_ex['Difficulty'] == 'Easy'].sample()
+                        print("no easy found")
+
+                    except ValueError as e:
+                        next_ex = temp_ex.sample()
+
+                else:
+                    try:
+                        next_ex = temp_ex[temp_ex['Difficulty'] == 'Hard'].sample()
+                    except ValueError as e:
+                        print("No hard ones found - sampling randomly")
+                        next_ex = temp_ex.sample()                
+                #next_ex = temp_ex.sample(random_state=args.prng_seed)
                 err_msg =   f"Failed to find a {new_difficulty} excercise targeting" + \
                             f" {target} and avoiding previous muscle groups" + \
                             f" ({prev_muscle_groups}); randomly picked " + \
