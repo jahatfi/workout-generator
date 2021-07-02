@@ -250,7 +250,7 @@ for group in args.target_regions:
     else:
         all_muscle_groups.add(group)
 
-all_muscle_groups = list(all_muscle_groups)
+all_muscle_groups = sorted(list(all_muscle_groups))
 if not args.number:
     args.number = len(all_muscle_groups)*3
 
@@ -318,12 +318,12 @@ targets = []
 # Randomly pick the first exercise from the corresponding difficulty levels
 if args.difficulty < 33:
     plan = excercises[excercises['Difficulty'] == 'Easy'].sample()
-    state = 0
+    #state = 0
 elif args.difficulty < 67:
     plan = excercises[excercises['Difficulty'] == 'Medium'].sample()
-    state = 1
+    #state = 1
 else:
-    state = 2
+    #state = 2
     plan = excercises[excercises['Difficulty'] == 'Hard'].sample()
 
 
@@ -334,12 +334,12 @@ targets.append(target)
 
 # Finally build the workout plan with N excercises total (excluding stretches)
 print("Building plan")
+print(f"Difficulty levels: {difficulty_levels}")
 while len(plan) < args.number:
     # Select the next muscle to target 
     # by cycling through the list of muscles selected by the user
     target = all_muscle_groups[(all_muscle_groups.index(target)+1)%len(all_muscle_groups)]
     target = target.strip()
-    print(f"Finding an excercise to target {target}")
     # Roll a 100-sided dice to help pick the next 
     # difficult level based on the transition matrix
     dice = random.randrange(0,100,1)
@@ -348,15 +348,20 @@ while len(plan) < args.number:
     #print(f"Old state: {state}")
     # Get the next difficulty level (0-2) using the dice roll 
     # and the computed transition matrix
+    state = difficulty_levels.index(plan.tail(1)['Difficulty'].values[0])
     for i in range(3):
         sum += tm[state,i]
         if dice < sum:
             state = i
             break
 
+
     #print(f"New state: {state}")
     # Convert the level (0-2) to a string, e.g. 0->"Easy"
     new_difficulty = difficulty_levels[state]
+    #print(f"Dice: {dice} State: {state}")
+
+    print(f"Looking for a(n) {new_difficulty} excercise to target {target} - ", end='')
 
     # What muscle groups were used in the previous excercise?
     prev_excercise = plan.tail(1)
@@ -405,24 +410,46 @@ while len(plan) < args.number:
             #if args.verbose:
             #    print(drop_msg)
 
-    # temp_ex now holds excercises that 
+    # temp_ex now holds excercises that target the next msucle
     try:
         next_ex = temp_ex[temp_ex['Difficulty'] == new_difficulty].sample()
     except ValueError as e:
         try:
-            next_ex = temp_ex.sample()
+            if state == 0 or state == 2:
+                try:
+                    next_ex = temp_ex[temp_ex['Difficulty'] == 'Medium'].sample()
+                except ValueError:
+                    next_ex = temp_ex.sample()
+
+            elif args.difficulty <= 50:
+                try:
+                    next_ex = temp_ex[temp_ex['Difficulty'] == 'Easy'].sample()
+                except ValueError as e:
+                    next_ex = temp_ex.sample()
+
+            else:
+                try:
+                    next_ex = temp_ex[temp_ex['Difficulty'] == 'Hard'].sample()
+                except ValueError as e:
+                    next_ex = temp_ex.sample()
+
             err_msg =   f"Failed to find a {new_difficulty} excercise targeting" + \
                         f" {target} and avoiding previous muscle groups" + \
                         f" ({prev_muscle_groups}); randomly picked " + \
                         f"{next_ex['Name'].item()} with {next_ex['Difficulty'].item()} difficulty instead"    
-            if args.verbose:
-                print(err_msg)
+            #if args.verbose:
+            print(err_msg)
         except ValueError as e:
+            print(e)
             if args.verbose:
                 print(f"Couldn't target {target} AND give proper muscle rest")
                 print("Skipping it as the primary target")
+                # Roll back the state 
+                # e.g. If we were looking for a hard biceps ex, we still want 
+                # a hard excercise next
+                # print(f"Rolled back state to {state}")
             continue
-
+    print(f"{next_ex['Name'].item()} with {next_ex['Difficulty'].item()} difficulty")
     plan = pd.concat([plan, next_ex])
     targets.append(target)
 
