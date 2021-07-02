@@ -128,7 +128,9 @@ with open("results4.csv", 'w') as outfile:
                 equipment_required.append("Resistance Loop") 
         if b"chair" in ex_page.content:
             equipment_required.append("chair")
-        if "foam roller" in ex_name.lower():
+        if b" mat " in ex_page.content:
+            equipment_required.append("mat")            
+        if "foam-roller" in ex_name.lower():
             equipment_required.append("Foam Roller")
         if "kettlebell" in ex_name.lower():
             equipment_required.append("Kettlebell")
@@ -150,10 +152,12 @@ with open("results4.csv", 'w') as outfile:
                                                                 "lay down",
                                                                 "Lie down",
                                                                 "lie down",
+                                                                "Lay on the floor",
+                                                                "Lie on the floor",
                                                                 "on your back"]):
             smooth_ground = True
 
-        is_stretch = "stretch" in ex_name
+        is_stretch = ("stretch" in ex_name or "pose" in ex_name)
         #print(easy_mod)
         #print(hard_mod)
         if easy_text == footer_text:
