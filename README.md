@@ -1,7 +1,7 @@
 # workout-generator
 Builds a database of excercises by crawling sworkit.com.  
 
-'''bash
+```bash
 usage: BuildWorkout.py [-h] -t TARGET_REGIONS [-e EQUIPMENT] [-n NUMBER] [-i IMPACT_LEVEL] [-s STRETCH] [-p PRNG_SEED] [-v VERBOSE]
                        database difficulty smooth_surface
 
