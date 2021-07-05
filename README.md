@@ -1,5 +1,7 @@
 # workout-generator
-Builds a database of excercises by crawling sworkit.com.  
+1.  Download the HTML file https://sworkit.com/exercises and save as "sworkit_excercise_library.html"
+2. Run BuildWorkout.py with ```bash python BuildWorkout.py```.  This will create a database of excercises by crawling sworkit.com and writing it to results.csv.
+3. Run BuildWorkout.py as shown below:  
 
 ```bash
 usage: BuildWorkout.py [-h] -t TARGET_REGIONS [-e EQUIPMENT] [-n NUMBER] [-i IMPACT_LEVEL] [-s STRETCH] [-p PRNG_SEED] [-v VERBOSE]
