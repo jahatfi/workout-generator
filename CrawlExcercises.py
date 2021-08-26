@@ -37,7 +37,7 @@ csv_headers = ["Name",
         "Smooth Ground Required",
         "Link"]
 
-with open("results4.csv", 'w') as outfile:
+with open("results.csv", 'w') as outfile:
     outfile.write("\t".join(csv_headers)+"\n")
 
     for link_num, link in enumerate(list(links)):

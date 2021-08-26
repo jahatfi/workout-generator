@@ -17,12 +17,12 @@ difficulty_cycles = {
     0.13: [0,0,0,1],
     0.17: [0,0,1],
     0.25: [0,1],
-    0.33: [0,0,1,2,1],
-    0.38: [0,0,1,2],
+    0.33: [0,1,0,2,1],
+    0.38: [0,1,0,2],
     0.46: [0,1,1,2,1],
     0.5:  [[0,1,2,1], [0,2]],
     0.62: [0,1,2,2],
-    0.63: [0,1,2,2,0],
+    0.63: [0,1,2,0,2],
     0.75: [1,2],
     0.83: [1,2,2],
     0.88: [[1,2,2,2], [1,2,2,2,2]],
@@ -128,7 +128,7 @@ for region in target_regions_list:
         all_regions |= set(region.keys())
         all_regions |= set(list(region.values())[0])
 
-print("Formatting some variables for pretty printing.")
+#print("Formatting some variables for pretty printing.")
 headers = pp.pformat(tsv_headers)
 equipment = pp.pformat(sorted(equipment_list))
 target_regions = pp.pformat(target_regions_list)
@@ -269,15 +269,17 @@ for group in args.target_regions:
     else:
         all_muscle_groups.add(group)
 
-all_muscle_groups = sorted(list(all_muscle_groups))[::-1]
+#all_muscle_groups = sorted(list(all_muscle_groups))[::-1]
+all_muscle_groups = list(all_muscle_groups)[::-1]
+random.shuffle(all_muscle_groups)
 if not args.number:
     args.number = len(all_muscle_groups)*3
 
 print("Reading provided database")
 df = pd.read_csv(args.database, sep='\t')
 df = df.sort_values('Name')
-print("Computing transition matrix based on difficulty")
-tm = get_matrix(args.difficulty)
+#print("Computing transition matrix based on difficulty")
+#tm = get_matrix(args.difficulty)
 #print(df)
 plan = []
 drop_indices = []
@@ -353,7 +355,7 @@ def build_plan(args,
     best_cycle_dist = 10
     best_cycle_key = 0
     for key, value in difficulty_cycles.items():
-        print(f"Examining {key}:{value}")
+        #print(f"Examining {key}:{value}")
 
         if not isinstance(value[0], list):
             if  key == 0 or \
@@ -363,18 +365,18 @@ def build_plan(args,
                     best_cycle = value
                     best_cycle_key = key
                     best_cycle_dist = abs(args.difficulty/100 - key )
-                    print(f"Updating current best as {best_cycle_dist} {key}:{value}")
+                    #print(f"Updating current best as {best_cycle_dist} {key}:{value}")
 
         else:
             for cycle in value:
                 if len(all_muscle_groups) != len(cycle) and (len(all_muscle_groups)%len(cycle)):
                     if abs(args.difficulty/100 - key) < best_cycle_dist:
-                        print(f"Updating current best as {key}:{value}")
+                        #print(f"Updating current best as {key}:{value}")
 
                         best_cycle = cycle
                         best_cycle_key = key
                         best_cycle_dist = abs(args.difficulty/100 - key )
-                        print(f"Updating current best as {best_cycle_dist} {key}:{value}")
+                        #print(f"Updating current best as {best_cycle_dist} {key}:{value}")
 
     # Difficulty level determines the difficulty of the first excercise
     # Randomly pick the first exercise from the corresponding difficulty levels
@@ -614,10 +616,10 @@ if args.stretch:
 
 outfile =   str('_'.join(all_muscle_groups) + 
             '_difficulty_'+str(args.difficulty) + 
-            '_'+args.impact_level+"_impact_level_"+
+            "_impact_level_"+args.impact_level+
             '_'.join(args.equipment) +
             '_smooth_surface_'+str(args.smooth_surface)+
-            '_stretch_'+str(args.stretch) +  
+            '_with_stretches_'+str(args.stretch) +  
             '_PRNG_seed_'+str(args.prng_seed))
 outfile = outfile.replace(" ", '_')
 for i in range(1000):
@@ -627,6 +629,6 @@ if i > 1000:
     print(f"Too many files with the same name.")
     print("Please delete one of the files you have with the prefix: {outfile}")
     sys.exit(1)
-outfile = outfile + '_' + str(1) + '.csv'
+outfile = outfile + '_' + str(1) + '.tsv'
 plan.to_csv(outfile, sep="\t", na_rep="N/A", index=False)
 print(f"Success! Wrote results to {outfile}")
